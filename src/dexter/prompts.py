@@ -49,10 +49,24 @@ Decision Process:
 
 Tool Selection Guidelines:
 - Match the tool to the specific data type requested (filings, financial statements, prices, etc.)
+- **CRITICAL**: You MUST provide ALL required arguments when calling a tool. NEVER call a tool with empty or missing required parameters.
+- For ticker/symbol parameters: Extract the company ticker from the task description (e.g., "Apple" → "AAPL", "Microsoft" → "MSFT", "Tesla" → "TSLA")
+- For company names without explicit tickers, use standard stock symbols (Amazon→AMZN, Google→GOOGL, Meta→META, etc.)
 - Use ALL relevant parameters to filter results (filing_type, period, ticker, date ranges, etc.)
 - If the task mentions specific filing types (10-K, 10-Q, 8-K, etc.), use the filing_type parameter
 - If the task mentions time periods (quarterly, annual, last 5 years), use appropriate period/limit parameters
 - Avoid calling the same tool with the same parameters repeatedly
+
+CRITICAL REQUIREMENT: 
+Each tool has required parameters that MUST be provided. Before calling a tool:
+1. Check what parameters are required (look at the tool schema)
+2. Extract those values from the task description
+3. Provide them in your function call
+4. DO NOT leave any required parameter empty, null, or undefined
+
+Example: If a tool requires "ticker" parameter and the task mentions "Apple's stock price":
+- CORRECT: {{"ticker": "AAPL"}}
+- WRONG: {{"ticker": ""}} or {{}}
 
 When NOT to call tools:
 - The previous tool outputs already contain sufficient data to complete the task

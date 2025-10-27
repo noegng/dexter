@@ -1,18 +1,27 @@
 import os
 import time
-from langchain_openai import ChatOpenAI
+from dotenv import load_dotenv
+from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.prompts import ChatPromptTemplate
 from pydantic import BaseModel
 from typing import Type, List, Optional
 from langchain_core.tools import BaseTool
 from langchain_core.messages import AIMessage
-from openai import APIConnectionError
+from google.api_core.exceptions import GoogleAPIError
 
 from dexter.prompts import DEFAULT_SYSTEM_PROMPT
 
-# Initialize the OpenAI client
-# Make sure your OPENAI_API_KEY is set in your .env
-llm = ChatOpenAI(model="gpt-4.1", temperature=0, api_key=os.getenv("OPENAI_API_KEY"))
+# Load environment variables
+load_dotenv()
+
+# Initialize the Gemini client
+# Make sure your GOOGLE_API_KEY is set in your .env
+llm = ChatGoogleGenerativeAI(
+    model="gemini-2.5-flash", 
+    temperature=0, 
+    google_api_key=os.getenv("GOOGLE_API_KEY"),
+    convert_system_message_to_human=True  # Important for Gemini compatibility
+)
 
 def call_llm(
     prompt: str,
@@ -29,8 +38,14 @@ def call_llm(
 
   runnable = llm
   if output_schema:
-      runnable = llm.with_structured_output(output_schema, method="function_calling")
+      # Gemini 2.5 requires explicit json_mode or json_schema method
+      try:
+          runnable = llm.with_structured_output(output_schema, method="json_schema")
+      except:
+          # Fallback to default method if json_schema is not supported
+          runnable = llm.with_structured_output(output_schema)
   elif tools:
+      # Bind tools for Gemini function calling
       runnable = llm.bind_tools(tools)
   
   chain = prompt_template | runnable
@@ -39,7 +54,7 @@ def call_llm(
   for attempt in range(3):
       try:
           return chain.invoke({"prompt": prompt})
-      except APIConnectionError as e:
+      except GoogleAPIError as e:
           if attempt == 2:  # Last attempt
               raise
           time.sleep(0.5 * (2 ** attempt))  # 0.5s, 1s backoff

@@ -82,6 +82,10 @@ class Agent:
         if not tool:
             return initial_args
         
+        # If initial_args already has required parameters, use them
+        if initial_args and any(initial_args.values()):
+            return initial_args
+        
         # Get tool schema info
         tool_description = tool.description
         tool_schema = tool.args_schema.schema() if hasattr(tool, 'args_schema') and tool.args_schema else {}
@@ -93,18 +97,51 @@ class Agent:
         Tool Parameters: {tool_schema}
         Initial Arguments: {initial_args}
         
-        Review the task and optimize the arguments to ensure all relevant parameters are used correctly.
+        The initial arguments are incomplete or empty. You MUST extract the required parameters from the task description.
+        
+        Review the task and generate complete arguments with ALL required parameters filled in.
+        Extract tickers, dates, and other required values from the task description.
         Pay special attention to filtering parameters that would help narrow down results to match the task.
         """
         try:
             response = call_llm(prompt, system_prompt=get_tool_args_system_prompt(), output_schema=OptimizedToolArgs)
             # Handle case where LLM returns dict directly instead of OptimizedToolArgs
             if isinstance(response, dict):
-                return response if response else initial_args
-            return response.arguments
+                optimized = response if response else initial_args
+            else:
+                optimized = response.arguments if hasattr(response, 'arguments') else initial_args
+            
+            # Validate that we have non-empty arguments
+            if not optimized or not any(optimized.values()):
+                self.logger._log(f"WARNING: Optimization returned empty args, attempting basic extraction")
+                optimized = self._extract_basic_args(tool_schema, task_desc)
+            
+            return optimized
         except Exception as e:
-            self.logger._log(f"Argument optimization failed: {e}, using original args")
-            return initial_args
+            self.logger._log(f"Argument optimization failed: {e}, attempting basic extraction")
+            return self._extract_basic_args(tool_schema, task_desc)
+    
+    def _extract_basic_args(self, tool_schema: dict, task_desc: str) -> dict:
+        """Fallback: Extract basic arguments from task description."""
+        args = {}
+        task_upper = task_desc.upper()
+        
+        # Common ticker symbols
+        ticker_mapping = {
+            "APPLE": "AAPL", "MICROSOFT": "MSFT", "GOOGLE": "GOOGL", "ALPHABET": "GOOGL",
+            "AMAZON": "AMZN", "TESLA": "TSLA", "META": "META", "FACEBOOK": "META",
+            "NVIDIA": "NVDA", "NETFLIX": "NFLX", "INTEL": "INTC", "AMD": "AMD"
+        }
+        
+        # Try to extract ticker
+        for company, ticker in ticker_mapping.items():
+            if company in task_upper:
+                if 'properties' in tool_schema and 'ticker' in tool_schema['properties']:
+                    args['ticker'] = ticker
+                    self.logger._log(f"Extracted ticker: {ticker} from task description")
+                    break
+        
+        return args
 
     # ---------- tool execution ----------
     def _execute_tool(self, tool, tool_name: str, inp_args):
@@ -189,8 +226,15 @@ class Agent:
                     tool_name = tool_call["name"]
                     initial_args = tool_call["args"]
                     
+                    # Debug: Log what Gemini returned
+                    self.logger._log(f"DEBUG - Tool call from LLM: {tool_name} with args: {initial_args}")
+                    
                     # Refine tool arguments for better performance.
+                    # This is critical for Gemini 2.5 which sometimes returns empty args
                     optimized_args = self.optimize_tool_args(tool_name, initial_args, task.description)
+                    
+                    # Debug: Log optimized args
+                    self.logger._log(f"DEBUG - Optimized args: {optimized_args}")
                     
                     # Create a signature of the action to be taken.
                     action_sig = f"{tool_name}:{optimized_args}"
