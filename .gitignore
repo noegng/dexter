@@ -44,9 +44,20 @@ yarn-error.log*
 *.swo
 *~
 .DS_Store
+.release-notes-*.md
 
 # UV
 .uv/
 
 # Cursor files
 .cursor/
+
+# Dexter context files (offloaded tool outputs)
+.dexter/*
+
+
+logs/
+coverage.json
+
+# Scratchpad files
+scratchpads/*
